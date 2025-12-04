@@ -12,6 +12,7 @@ import sys
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
+from tkinter import ttk
 
 class ConfigManager:
     """配置管理模块"""
@@ -104,12 +105,13 @@ class IncrementalCopier:
     def __init__(self):
         self.logs = []
     
-    def copy_files(self, match_results):
+    def copy_files(self, match_results, progress_callback=None):
         """增量复制文件"""
         copied_count = 0
         skipped_count = 0
+        total_files = len(match_results)
         
-        for source_path, target_path in match_results:
+        for i, (source_path, target_path) in enumerate(match_results):
             # 检查目标文件是否已存在
             if os.path.exists(target_path):
                 # 文件已存在，跳过
@@ -126,6 +128,11 @@ class IncrementalCopier:
                 except Exception as e:
                     log = f"复制失败：{os.path.basename(source_path)} -> {os.path.dirname(target_path)}，错误：{str(e)}"
                     self.logs.append(log)
+            
+            # 调用进度回调函数
+            if progress_callback:
+                progress = (i + 1) / total_files * 100
+                progress_callback(progress)
         
         return copied_count, skipped_count
     
@@ -281,6 +288,17 @@ class GUIController:
         tk.Button(button_frame, text="执行复制", command=self._execute_copy, width=15, bg="#4CAF50", fg="white").pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="清空日志", command=self._clear_log, width=15).pack(side=tk.LEFT, padx=5)
         
+        # 进度条区域
+        progress_frame = tk.LabelFrame(main_frame, text="复制进度", padx=10, pady=10)
+        progress_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = tk.ttk.Progressbar(progress_frame, variable=self.progress_var, maximum=100)
+        self.progress_bar.pack(fill=tk.X, pady=(0, 5))
+        
+        self.progress_label = tk.Label(progress_frame, text="0%")
+        self.progress_label.pack()
+        
         # 日志显示区域
         log_frame = tk.LabelFrame(main_frame, text="操作日志", padx=10, pady=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
@@ -373,12 +391,28 @@ class GUIController:
             self._add_log("正在执行增量复制...")
             self.root.update()
             
+            # 初始化进度条
+            self.progress_var.set(0)
+            self.progress_label.config(text="0%")
+            self.root.update()
+            
+            # 进度回调函数
+            def update_progress(progress):
+                self.progress_var.set(progress)
+                self.progress_label.config(text=f"{int(progress)}%")
+                self.root.update()
+            
             copier = IncrementalCopier()
-            copied_count, skipped_count = copier.copy_files(match_results)
+            copied_count, skipped_count = copier.copy_files(match_results, progress_callback=update_progress)
             
             # 添加复制结果到日志
             for log in copier.logs:
                 self._add_log(log)
+            
+            # 重置进度条
+            self.progress_var.set(0)
+            self.progress_label.config(text="0%")
+            self.root.update()
             
             # 4. 保存日志
             copier.save_logs()
